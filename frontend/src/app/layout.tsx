@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/providers/ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,21 +21,35 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "RecSys Article Search | Shaped",
-  description: "Search for recommendations and machine learning articles from the Shaped blog",
+  title: "Ask Al",
+  description: "Ask Allen, our friendly assistant, anything",
 };
 
-export default function RootLayout({
+const themeScript = `
+(function() {
+  const stored = localStorage.getItem('shaped-agent-theme');
+  const theme = stored === 'dark' || stored === 'light' ? stored : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+`;
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
+  params?: Promise<Record<string, string>>;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

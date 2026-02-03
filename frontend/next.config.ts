@@ -9,9 +9,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ["langchain", "@langchain/core", "@langchain/anthropic"],
-  },
+  serverExternalPackages: ["langchain", "@langchain/core", "@langchain/anthropic"],
   // Webpack config for when using --webpack flag
   webpack: (config, { isServer }) => {
     // Resolve symlinks for npm link packages

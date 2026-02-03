@@ -2,8 +2,8 @@ version: v2
 name: agent_rag_search_engine
 data:
   item_table:
-    name: docs_content_for_shaped_agent
-    type: table
+    query: select *, id as item_id from docs_content_for_shaped_agent
+    type: query
 index:
   lexical_search:
     item_fields:

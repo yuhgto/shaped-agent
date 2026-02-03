@@ -1,8 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { Send, Loader2, User, Bot, Search, Globe } from "lucide-react"
+import { Send, Loader2, User, ArrowDown, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { CodeBlock } from "@/components/CodeBlock"
+import Image from "next/image"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 type MessageType = 
   | { type: "user"; content: string }
@@ -15,28 +22,60 @@ interface ChatMessage {
   message: MessageType
 }
 
-export function AgentChat() {
+export interface AgentChatHandle {
+  submitQuery: (query: string) => void
+}
+
+interface AgentChatProps {
+  onEmptyStateChange?: (isEmpty: boolean) => void
+}
+
+export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(function AgentChat({ onEmptyStateChange }, ref) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
-
-  // Auto-scroll to bottom when messages change
-  React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+  const [showScrollButton, setShowScrollButton] = React.useState(false)
 
   // Focus input on mount
   React.useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
+  // Track scroll position
+  const handleScroll = React.useCallback(() => {
+    if (!scrollContainerRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
+    setShowScrollButton(!isNearBottom)
+  }, [])
 
-    const userMessage = input.trim()
+  React.useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    
+    // Check initial scroll position
+    handleScroll()
+    
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
+
+  // Check scroll position when messages change
+  React.useEffect(() => {
+    handleScroll()
+  }, [messages, handleScroll])
+
+  const scrollToBottom = React.useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [])
+
+  const submitMessage = React.useCallback(async (messageText: string) => {
+    if (!messageText.trim() || isLoading) return
+
+    const userMessage = messageText.trim()
     setInput("")
     
     // Add user message immediately
@@ -317,43 +356,31 @@ export function AgentChat() {
         }
       }])
     }
-  }
+  }, [isLoading])
+
+  const handleSubmit = React.useCallback((e: React.FormEvent) => {
+    e.preventDefault()
+    submitMessage(input)
+  }, [input, submitMessage])
+
+  React.useImperativeHandle(ref, () => ({
+    submitQuery: (query: string) => {
+      setInput(query)
+      // Use setTimeout to ensure state is updated before submitting
+      setTimeout(() => submitMessage(query), 0)
+    }
+  }), [submitMessage])
 
   const isEmpty = messages.length === 0 && !isLoading
 
+  React.useEffect(() => {
+    onEmptyStateChange?.(isEmpty)
+  }, [isEmpty, onEmptyStateChange])
+
   return (
     <div className="flex flex-col h-full">
-      {/* Input form - shown at top when empty, at bottom when messages exist */}
-      {isEmpty && (
-        <form onSubmit={handleSubmit} className="w-full">
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question..."
-              disabled={isLoading}
-              className="w-full h-12 sm:h-14 pl-4 sm:pl-5 pr-14 sm:pr-16 bg-slate-900/90 border border-slate-700/50 rounded-xl sm:rounded-2xl text-base sm:text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 backdrop-blur-xl transition-all duration-300 shadow-xl shadow-black/20 disabled:opacity-50"
-            />
-            <Button
-              type="submit"
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4 sm:h-5 sm:w-5" />
-              )}
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {/* Messages container */}
-      <div className={`${isEmpty ? 'hidden' : 'flex-1 overflow-y-auto space-y-4 sm:space-y-6 mb-4 pr-2 min-h-0'}`}>
+      {/* Messages container - flex-1, scrollable */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-4 sm:space-y-6 pt-4 sm:pt-6 mb-4 pr-2 min-h-0">
         {messages
           .filter((msg) => {
             // Filter out empty assistant messages
@@ -369,13 +396,13 @@ export function AgentChat() {
           if (message.type === "user") {
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-end">
-                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-cyan-500/20 text-slate-100">
+                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-muted dark:bg-primary/20 text-foreground">
                   <div className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
                     {message.content}
                   </div>
                 </div>
-                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-700/50 flex items-center justify-center">
-                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-muted flex items-center justify-center">
+                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                 </div>
               </div>
             )
@@ -385,50 +412,109 @@ export function AgentChat() {
           if (message.type === "assistant") {
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
-                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                  <Bot className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
+                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                  <Image 
+                    src="/creepy_allen-removebg-preview.png" 
+                    alt="Allen" 
+                    width={40} 
+                    height={40}
+                    className="object-cover"
+                  />
                 </div>
-                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-slate-900/60 border border-slate-700/40 text-slate-200">
+                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-muted/50 text-foreground">
                   <div className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                    {message.content.split('\n').map((line, i, arr) => {
-                      // Handle markdown headers
-                      if (line.startsWith('### ')) {
-                        return <h3 key={i} className="text-lg font-semibold mt-4 mb-2 text-slate-100">{line.substring(4)}</h3>
+                    {(() => {
+                      const lines = message.content.split('\n')
+                      const elements: React.ReactElement[] = []
+                      let i = 0
+                      
+                      while (i < lines.length) {
+                        const line = lines[i]
+                        
+                        // Handle code blocks (triple backticks)
+                        if (line.startsWith('```')) {
+                          const language = line.substring(3).trim()
+                          const codeLines: string[] = []
+                          i++
+                          
+                          // Collect all lines until closing ```
+                          while (i < lines.length && !lines[i].startsWith('```')) {
+                            codeLines.push(lines[i])
+                            i++
+                          }
+                          
+                          elements.push(
+                            <CodeBlock
+                              key={elements.length}
+                              language={language}
+                              code={codeLines.join('\n')}
+                            />
+                          )
+                          i++ // Skip closing ```
+                          continue
+                        }
+                        
+                        // Handle markdown headers
+                        if (line.startsWith('### ')) {
+                          elements.push(
+                            <h3 key={elements.length} className="text-lg font-semibold mt-4 mb-2 text-foreground">
+                              {line.substring(4)}
+                            </h3>
+                          )
+                          i++
+                          continue
+                        }
+                        if (line.startsWith('## ')) {
+                          elements.push(
+                            <h2 key={elements.length} className="text-xl font-semibold mt-4 mb-2 text-foreground">
+                              {line.substring(3)}
+                            </h2>
+                          )
+                          i++
+                          continue
+                        }
+                        if (line.startsWith('# ')) {
+                          elements.push(
+                            <h1 key={elements.length} className="text-2xl font-bold mt-4 mb-2 text-foreground">
+                              {line.substring(2)}
+                            </h1>
+                          )
+                          i++
+                          continue
+                        }
+                        
+                        // Handle regular text with bold and inline code
+                        const parts = line.split(/(\*\*.*?\*\*)/g)
+                        elements.push(
+                          <p key={elements.length} className={i < lines.length - 1 ? "mb-2" : ""}>
+                            {parts.map((part, j) => {
+                              if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={j} className="text-foreground font-semibold">{part.slice(2, -2)}</strong>
+                              }
+                              // Handle inline code
+                              const codeParts = part.split(/(`[^`]+`)/g)
+                              return (
+                                <React.Fragment key={j}>
+                                  {codeParts.map((codePart, k) => {
+                                    if (codePart.startsWith('`') && codePart.endsWith('`')) {
+                                      return (
+                                        <code key={k} className="bg-muted px-1.5 py-0.5 rounded text-foreground text-xs">
+                                          {codePart.slice(1, -1)}
+                                        </code>
+                                      )
+                                    }
+                                    return <span key={k}>{codePart}</span>
+                                  })}
+                                </React.Fragment>
+                              )
+                            })}
+                          </p>
+                        )
+                        i++
                       }
-                      if (line.startsWith('## ')) {
-                        return <h2 key={i} className="text-xl font-semibold mt-4 mb-2 text-slate-100">{line.substring(3)}</h2>
-                      }
-                      if (line.startsWith('# ')) {
-                        return <h1 key={i} className="text-2xl font-bold mt-4 mb-2 text-slate-100">{line.substring(2)}</h1>
-                      }
-                      // Handle bold text
-                      const parts = line.split(/(\*\*.*?\*\*)/g)
-                      return (
-                        <p key={i} className={i < arr.length - 1 ? "mb-2" : ""}>
-                          {parts.map((part, j) => {
-                            if (part.startsWith('**') && part.endsWith('**')) {
-                              return <strong key={j} className="text-slate-100 font-semibold">{part.slice(2, -2)}</strong>
-                            }
-                            // Handle inline code
-                            const codeParts = part.split(/(`[^`]+`)/g)
-                            return (
-                              <React.Fragment key={j}>
-                                {codeParts.map((codePart, k) => {
-                                  if (codePart.startsWith('`') && codePart.endsWith('`')) {
-                                    return (
-                                      <code key={k} className="bg-slate-800/50 px-1.5 py-0.5 rounded text-cyan-400 text-xs">
-                                        {codePart.slice(1, -1)}
-                                      </code>
-                                    )
-                                  }
-                                  return <span key={k}>{codePart}</span>
-                                })}
-                              </React.Fragment>
-                            )
-                          })}
-                        </p>
-                      )
-                    })}
+                      
+                      return elements
+                    })()}
                   </div>
                 </div>
               </div>
@@ -453,37 +539,30 @@ export function AgentChat() {
               parsedArgs = message.toolArgs
             }
             
+            const headerLabel = isSearch ? "Searching documents" : isReadWebpage ? "Reading webpage" : `Calling ${message.toolName}`
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
-                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  {isSearch ? (
-                    <Search className="h-4 w-4 sm:h-5 sm:w-5 text-amber-400" />
-                  ) : isReadWebpage ? (
-                    <Globe className="h-4 w-4 sm:h-5 sm:w-5 text-amber-400" />
-                  ) : (
-                    <Bot className="h-4 w-4 sm:h-5 sm:w-5 text-amber-400" />
-                  )}
-                </div>
-                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-amber-500/10 border border-amber-500/30 text-slate-300">
-                  <div className="text-sm sm:text-base">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-semibold text-amber-400">
-                        {isSearch ? "Searching documents" : isReadWebpage ? "Reading webpage" : `Calling ${message.toolName}`}
-                      </span>
-                    </div>
+                <Collapsible className="max-w-[85%] sm:max-w-[75%]">
+                  <div className="text-sm sm:text-base text-muted-foreground">
+                    <CollapsibleTrigger className="flex items-center gap-2 group data-[state=open]:mb-2">
+                      <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=closed]:rotate-[-90deg]" />
+                      <span className="font-semibold text-foreground">{headerLabel}</span>
+                    </CollapsibleTrigger>
                     {parsedArgs && (
-                      <div className="text-xs text-slate-400 mt-2">
-                        {typeof parsedArgs === "string" ? (
-                          <span className="font-mono">{parsedArgs}</span>
-                        ) : (
-                          <pre className="whitespace-pre-wrap font-mono">
-                            {JSON.stringify(parsedArgs, null, 2)}
-                          </pre>
-                        )}
-                      </div>
+                      <CollapsibleContent>
+                        <div className="text-xs text-muted-foreground mt-2 pl-6">
+                          {typeof parsedArgs === "string" ? (
+                            <span className="font-mono">{parsedArgs}</span>
+                          ) : (
+                            <pre className="whitespace-pre-wrap font-mono">
+                              {JSON.stringify(parsedArgs, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      </CollapsibleContent>
                     )}
                   </div>
-                </div>
+                </Collapsible>
               </div>
             )
           }
@@ -503,55 +582,48 @@ export function AgentChat() {
               }
             }
             
+            const headerLabel = isSearch ? "Search results" : isReadWebpage ? "Webpage content" : `${message.toolName} result`
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
-                <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  {isSearch ? (
-                    <Search className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
-                  ) : isReadWebpage ? (
-                    <Globe className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
-                  ) : (
-                    <Bot className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
-                  )}
-                </div>
-                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-emerald-500/10 border border-emerald-500/30 text-slate-300">
-                  <div className="text-sm sm:text-base">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-semibold text-emerald-400">
-                        {isSearch ? "Search results" : isReadWebpage ? "Webpage content" : `${message.toolName} result`}
-                      </span>
+                <Collapsible defaultOpen={false} className="max-w-[85%] sm:max-w-[75%]">
+                  <div className="text-sm sm:text-base text-muted-foreground">
+                    <CollapsibleTrigger className="flex items-center gap-2 group data-[state=open]:mb-2">
+                      <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+                      <span className="font-semibold text-foreground">{headerLabel}</span>
                       {message.status && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                        <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
                           {message.status}
                         </span>
                       )}
-                    </div>
-                    {parsedResults && Array.isArray(parsedResults) ? (
-                      <div className="space-y-2 mt-2">
-                        {parsedResults.map((result: any, idx: number) => (
-                          <div key={idx} className="text-xs bg-slate-800/50 p-2 rounded">
-                            <div className="font-semibold text-slate-200 mb-1">{result.title}</div>
-                            <div className="text-slate-400 line-clamp-2">{result.content}</div>
-                            {result.url && (
-                              <a 
-                                href={result.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-cyan-400 hover:text-cyan-300 text-xs mt-1 block truncate"
-                              >
-                                {result.url}
-                              </a>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-400 mt-2 max-h-32 overflow-y-auto">
-                        {message.content.length > 200 ? `${message.content.substring(0, 200)}...` : message.content}
-                      </div>
-                    )}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      {(parsedResults && Array.isArray(parsedResults)) ? (
+                        <div className="space-y-2 mt-2 pl-6">
+                          {parsedResults.map((result: any, idx: number) => (
+                            <div key={idx} className="text-xs bg-muted p-2 rounded">
+                              <div className="font-semibold text-foreground mb-1">{result.title}</div>
+                              <div className="text-muted-foreground line-clamp-2">{result.content}</div>
+                              {result.url && (
+                                <a 
+                                  href={result.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline text-xs mt-1 block truncate"
+                                >
+                                  {result.url}
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground mt-2 pl-6 max-h-32 overflow-y-auto">
+                          {message.content.length > 200 ? `${message.content.substring(0, 200)}...` : message.content}
+                        </div>
+                      )}
+                    </CollapsibleContent>
                   </div>
-                </div>
+                </Collapsible>
               </div>
             )
           }
@@ -561,11 +633,17 @@ export function AgentChat() {
 
         {isLoading && (
           <div className="flex gap-3 sm:gap-4 justify-start">
-            <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
-              <Bot className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
+            <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+              <Image 
+                src="/creepy_allen-removebg-preview.png" 
+                alt="Allen" 
+                width={40} 
+                height={40}
+                className="object-cover"
+              />
             </div>
-            <div className="bg-slate-900/60 border border-slate-700/40 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400 animate-spin" />
+            <div className="bg-muted/50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary animate-spin" />
             </div>
           </div>
         )}
@@ -573,9 +651,8 @@ export function AgentChat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input form - shown at bottom when messages exist */}
-      {!isEmpty && (
-        <form onSubmit={handleSubmit} className="flex-shrink-0 pb-4">
+      {/* Input form - always at bottom */}
+      <form onSubmit={handleSubmit} className="flex-shrink-0 pb-4">
           <div className="relative">
             <input
               ref={inputRef}
@@ -584,13 +661,13 @@ export function AgentChat() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask a question..."
               disabled={isLoading}
-              className="w-full h-12 sm:h-14 pl-4 sm:pl-5 pr-14 sm:pr-16 bg-slate-900/90 border border-slate-700/50 rounded-xl sm:rounded-2xl text-base sm:text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 backdrop-blur-xl transition-all duration-300 shadow-xl shadow-black/20 disabled:opacity-50"
+              className="w-full h-12 sm:h-14 pl-4 sm:pl-5 pr-14 sm:pr-16 bg-muted/50 border border-border rounded-xl sm:rounded-2xl text-base sm:text-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-300 disabled:opacity-50"
             />
             <Button
               type="submit"
               disabled={!input.trim() || isLoading}
               size="icon"
-              className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
@@ -600,8 +677,18 @@ export function AgentChat() {
             </Button>
           </div>
         </form>
-      )}
+
+      {/* Floating scroll to bottom button */}
+      <button
+        onClick={scrollToBottom}
+        className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full p-3 shadow-lg transition-all duration-300 hover:scale-110 focus:outline-none ${
+          showScrollButton ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        aria-label="Scroll to bottom"
+      >
+        <ArrowDown className="w-5 h-5" />
+      </button>
     </div>
   )
-}
+})
 

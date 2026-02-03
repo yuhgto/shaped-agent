@@ -1,8 +1,13 @@
-import Image from "next/image";
+"use client"
+
+import Image from "next/image"
+import { useTheme } from "@/providers/ThemeProvider"
 
 export const PoweredByBadge: React.FC = () => {
+  const { theme } = useTheme()
+
   return (
-    <div className="z-50 bg-transparent sm:bg-white sm:border sm:border-gray-200 rounded-lg px-0 py-0 sm:px-3 sm:py-2 sm:animate-glow">
+    <div className="z-50 bg-transparent sm:bg-background sm:border sm:border-border rounded-lg px-0 py-0 sm:px-3 sm:py-2 sm:animate-glow">
       <style jsx>{`
         @keyframes glow {
           0%, 100% {
@@ -17,18 +22,18 @@ export const PoweredByBadge: React.FC = () => {
         }
       `}</style>
       <a 
-        href="https://shaped.ai" 
+        href="https://shaped.ai/agent-retrieval" 
         target="_blank" 
         rel="noopener noreferrer"
-        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-slate-300 sm:text-gray-700 hover:text-white sm:hover:text-gray-900 active:text-white sm:active:text-gray-900 transition-colors touch-manipulation"
+        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-foreground hover:text-muted-foreground active:text-muted-foreground transition-colors touch-manipulation"
       >
         <span className="hidden sm:inline">Powered by</span>
         <Image 
-          src="https://docs.shaped.ai/img/shaped-icon.svg" 
+          src={theme === "dark" ? "/Shaped_Logo_Horizontal_White@3x (1).png" : "https://docs.shaped.ai/img/shaped-icon.svg"}
           alt="Shaped"
-          width={20}
-          height={20}
-          className="h-5 w-auto brightness-0 invert sm:brightness-100 sm:invert-0"
+          width={theme === "dark" ? 80 : 20}
+          height={theme === "dark" ? 24 : 20}
+          className="h-5 w-auto"
         />
       </a>
     </div>

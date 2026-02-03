@@ -1,16 +1,21 @@
+"use client"
+
 import Image from "next/image";
+import { useTheme } from "@/providers/ThemeProvider";
 import { PoweredByBadge } from "./PoweredByBadge";
 
 const GitHubButton = () => {
+  const { theme } = useTheme();
+
   return (
     <a
       href="https://github.com/yuhgto/shaped-demos/document-search"
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-transparent sm:bg-gray-900 hover:bg-gray-800 active:bg-gray-700 sm:border sm:border-gray-700 rounded-lg transition-colors touch-manipulation"
+      className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-muted hover:bg-muted/80 active:bg-muted/70 border border-border rounded-lg transition-colors touch-manipulation"
     >
       <Image
-        src="/github-mark-white.svg"
+        src={theme === "dark" ? "/github-mark-white.svg" : "/github-mark-black.png"}
         alt="GitHub"
         width={20}
         height={20}

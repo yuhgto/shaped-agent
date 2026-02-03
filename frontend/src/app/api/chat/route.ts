@@ -1,146 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAgent, tool } from "langchain";
+import { createAgent } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
-import * as cheerio from "cheerio";
-import * as z from "zod";
-import { getSearchResultsFromShaped } from "@/lib/shaped";
+import { searchDocuments, readWebpage, time, toolTimings, resetToolTimings } from "@/tools";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+// Cache the agent instance to avoid recreating it on every request
+let cachedAgent: ReturnType<typeof createAgent> | null = null;
 
-// Timing helper function
-const time = (label: string) => {
-  const start = performance.now();
-  return () => {
-    const duration = performance.now() - start;
-    return { label, duration };
-  };
-};
-
-// Track tool execution times for summary
-const toolTimings: Record<string, number> = {};
-
-const searchDocuments = tool(
-  async (input: { query: string }) => {
-    const stopTotal = time('searchDocuments_total');
-    
-    // Shaped API timing
-    const stopShaped = time('searchDocuments_shaped_api');
-    const results = await getSearchResultsFromShaped(input.query);
-    const shapedResult = stopShaped();
-    
-    // Formatting timing
-    const stopFormat = time('searchDocuments_format');
-    const formatted = JSON.stringify(
-      results.slice(0, 5).map((r) => ({
-        title: r.metadata.name,
-        content: r.metadata.content,
-        url: r.metadata.url,
-        author: r.metadata.author,
-      }))
-    );
-    const formatResult = stopFormat();
-    const totalResult = stopTotal();
-    
-    toolTimings['searchDocuments'] = totalResult.duration;
-    console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
-    
-    return formatted;
-  },
-  {
-    name: "search_documents",
-    description: "Search the blog for relevant documents about a given topic",
-    schema: z.object({
-      query: z.string().describe("The search query to find relevant documents"),
-    }),
-  }
-);
-
-const readWebpage = tool(
-  async (input: { url: string }) => {
-    const stopTotal = time('readWebpage_total');
-    const pageContent = await getBlogContent(input.url);
-    const totalResult = stopTotal();
-    
-    toolTimings['readWebpage'] = totalResult.duration;
-    console.log(`[readWebpage] total: ${totalResult.duration.toFixed(2)}ms`);
-    
-    return pageContent;
-  },
-  {
-    name: "read_webpage",
-    description: "Fetch and extract content from a blog post URL",
-    schema: z.object({
-      url: z.string().describe("The URL of the blog post to read"),
-    }),
-  }
-);
-
-const getBlogContent = async (url: string): Promise<string> => {
-  const stopTotal = time('getBlogContent_total');
-  try {
-    // Fetch timing
-    const stopFetch = time('getBlogContent_fetch');
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL: ${response.statusText}`);
-    }
-    const html = await response.text();
-    const fetchResult = stopFetch();
-    
-    // Parsing timing
-    const stopParse = time('getBlogContent_parse');
-    const $ = cheerio.load(html);
-    
-    const contentParts: string[] = [];
-    
-    // Extract p tags with class "post_summary"
-    $('p.post_summary').each((_, element) => {
-      const text = $(element).text().trim();
-      if (text) {
-        contentParts.push(text);
-      }
+function getAgent() {
+  if (!cachedAgent) {
+    const model = new ChatAnthropic({
+      model: "claude-sonnet-4-5-20250929",
+      apiKey: process.env.ANTHROPIC_API_KEY,
     });
-    
-    // Extract all text from descendants of div with class ".post_content" that contain ".post_rich-text"
-    const postContent = $('.post_content .post_rich-text');
-    if (postContent.length > 0) {
-      // Target specific elements: p, ul, h1, h2, etc.
-      postContent.find('p, ul, ol, h1, h2, h3, h4, h5, h6, li').each((_, element) => {
-        const text = $(element).text().trim();
-        if (text) {
-          contentParts.push(text);
-        }
-      });
-    }
-    
-    const output = contentParts.join('\n\n');
-    const parseResult = stopParse();
-    const totalResult = stopTotal();
-    
-    console.log(`[getBlogContent] fetch: ${fetchResult.duration.toFixed(2)}ms, parse: ${parseResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
-    
-    return output;
-  } catch (error) {
-    const totalResult = stopTotal();
-    console.error(`Error fetching blog content from ${url}:`, error);
-    console.log(`[getBlogContent] total: ${totalResult.duration.toFixed(2)}ms (error)`);
-    return `Error: Could not fetch content from ${url}`;
+
+    cachedAgent = createAgent({
+      model,
+      tools: [searchDocuments, readWebpage],
+      systemPrompt: `You are Allen (Al), a documentation assistant for Shaped. Help users find answers about the Shaped platform and API.
+
+Guidelines:
+- Be concise. Prefer short, direct answers over long explanations.
+- Include code examples when they clarify the answer (e.g., API calls, ShapedQL query syntax, engine config snippets).
+- Use search tools only when needed. Run search at most 4 times per question. If you still lack information after 4 searches, answer with what you have and suggest where to look.
+- Prefer a single, focused search but use multiple when required.
+- When you have enough context, answer without extra searches.`,
+    });
   }
+  return cachedAgent;
 }
-
-const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
-  apiKey: ANTHROPIC_API_KEY,
-});
-
-const agent = createAgent({
-  model,
-  tools: [searchDocuments, readWebpage],
-});
 
 export async function POST(request: NextRequest) {
   // Reset tool timings for this request
-  Object.keys(toolTimings).forEach(key => delete toolTimings[key]);
+  resetToolTimings();
   
   try {
     const body = await request.json();
@@ -162,6 +53,9 @@ export async function POST(request: NextRequest) {
         const stopAgent = time('agent_stream');
         
         try {
+          // Get or create the agent instance
+          const agent = getAgent();
+          
           // Stream agent responses with messages mode to get LLM tokens
           const stream = await agent.stream(
             { messages: [{ role: "user", content: userMessage }] },
