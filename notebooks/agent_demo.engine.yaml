@@ -1,0 +1,38 @@
+version: v2
+name: agent_rag_search_engine
+data:
+  item_table:
+    name: docs_content_for_shaped_agent
+    type: table
+index:
+  lexical_search:
+    item_fields:
+    - name
+    - content
+    - author
+    - categories
+    - roles
+  embeddings:
+    - name: text_content_embedding
+      encoder:
+        type: hugging_face
+        model_name: Alibaba-NLP/gte-modernbert-base
+        item_fields:
+          - content
+          - document_title
+          - h1
+          - h2
+          - h4
+          - h3
+    - name: title_embedding
+      encoder:
+        type: hugging_face
+        model_name: Alibaba-NLP/gte-modernbert-base
+        item_fields:
+          - document_title
+    - name: content_only_embedding
+      encoder:
+        type: hugging_face
+        model_name: Alibaba-NLP/gte-modernbert-base
+        item_fields:
+          - content
