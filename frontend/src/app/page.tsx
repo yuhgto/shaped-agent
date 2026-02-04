@@ -3,6 +3,7 @@
 import * as React from "react"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
+import { useTheme } from "@/providers/ThemeProvider"
 import { FloatingButtons } from "@/components/FloatingButtons"
 import { SettingsMenu } from "@/components/SettingsMenu"
 import { AgentChat, type AgentChatHandle } from "@/components/AgentChat"
@@ -15,6 +16,7 @@ const SAMPLE_QUERIES = [
 export default function Home() {
   const chatRef = React.useRef<AgentChatHandle>(null)
   const [isEmpty, setIsEmpty] = React.useState(true)
+  const { theme } = useTheme()
 
   return (
     <div className="min-h-screen bg-background relative overflow-x-hidden">
@@ -49,7 +51,7 @@ export default function Home() {
               }`}
             >
               <Image
-                src="/creepy_allen-removebg-preview.png"
+                src={theme === "dark" ? "/creepy_allen-removebg-preview.png" : "/allen_light_mode_happy.png"}
                 alt="Allen"
                 width={80}
                 height={80}

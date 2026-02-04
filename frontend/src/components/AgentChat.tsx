@@ -10,12 +10,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { useTheme } from "@/providers/ThemeProvider"
 
 type MessageType = 
   | { type: "user"; content: string }
   | { type: "assistant"; content: string }
   | { type: "tool_call"; toolName: string; toolArgs: any }
   | { type: "tool_result"; toolName: string; content: string; status: string }
+  | { type: "thinking"; content: string; duration?: number }
 
 interface ChatMessage {
   id: string
@@ -31,6 +33,7 @@ interface AgentChatProps {
 }
 
 export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(function AgentChat({ onEmptyStateChange }, ref) {
+  const { theme } = useTheme()
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
@@ -88,12 +91,40 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
     setIsLoading(true)
 
     try {
+      // Convert and filter messages to API format
+      const apiMessages = messages
+        .filter(msg => {
+          const type = msg.message.type;
+          // Include: user, assistant, and tool_result messages
+          // Exclude: tool_call and thinking messages
+          return type === "user" || type === "assistant" || type === "tool_result";
+        })
+        .map(msg => {
+          if (msg.message.type === "user") {
+            return { role: "user", content: msg.message.content };
+          } else if (msg.message.type === "assistant") {
+            return { role: "assistant", content: msg.message.content };
+          } else if (msg.message.type === "tool_result") {
+            // Tool results should be formatted appropriately for the API
+            return { 
+              role: "assistant", 
+              content: `[Tool: ${msg.message.toolName}] ${msg.message.content}` 
+            };
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .slice(-15); // Keep only last 15 messages
+
+      // Add the new user message
+      apiMessages.push({ role: "user", content: userMessage });
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ messages: apiMessages }),
       })
 
       if (!response.ok) {
@@ -111,6 +142,9 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
       let currentAssistantMessageId: string | null = null
       let currentToolCallId: string | null = null
       let accumulatedToolArgs = ""
+      let currentThinkingMessageId: string | null = null
+      let accumulatedThinkingContent = ""
+      let thinkingStartTime: number | null = null
 
       // Helper function to identify message type from token
       const getMessageType = (token: any): { type: string; data?: any } => {
@@ -151,6 +185,17 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                 type: "tool_call_delta",
                 data: {
                   input: inputDelta.input || ""
+                }
+              }
+            }
+            
+            // Check for thinking block
+            const thinkingBlock = content.find((block: any) => block.type === "thinking")
+            if (thinkingBlock) {
+              return {
+                type: "thinking",
+                data: {
+                  content: thinkingBlock.thinking || ""
                 }
               }
             }
@@ -291,7 +336,78 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                   // (don't create it yet, wait for the first token)
                   currentAssistantMessageId = null
                   accumulatedContent = ""
+                } else if (messageType.type === "thinking") {
+                  // Remove any empty assistant message that was created before thinking
+                  if (currentAssistantMessageId && !accumulatedContent.trim()) {
+                    setMessages((prev) => prev.filter(m => m.id !== currentAssistantMessageId))
+                    currentAssistantMessageId = null
+                    accumulatedContent = ""
+                  }
+                  
+                  // Handle thinking message
+                  if (!currentThinkingMessageId) {
+                    currentThinkingMessageId = `thinking-${Date.now()}`
+                    accumulatedThinkingContent = ""
+                    thinkingStartTime = Date.now()
+                    setMessages((prev) => [...prev, {
+                      id: currentThinkingMessageId!,
+                      message: { type: "thinking", content: "" }
+                    }])
+                  }
+                  
+                  const thinkingContent = messageType.data.content || ""
+                  accumulatedThinkingContent += thinkingContent
+                  
+                  // Update the thinking message with accumulated content
+                  if (currentThinkingMessageId) {
+                    const thinkingId = currentThinkingMessageId
+                    setMessages((prev) => {
+                      const newMessages = [...prev]
+                      const thinkingIndex = newMessages.findIndex(
+                        m => m.id === thinkingId
+                      )
+                      if (thinkingIndex !== -1) {
+                        newMessages[thinkingIndex] = {
+                          id: thinkingId,
+                          message: {
+                            type: "thinking",
+                            content: accumulatedThinkingContent
+                          }
+                        }
+                      }
+                      return newMessages
+                    })
+                  }
                 } else if (messageType.type === "assistant") {
+                  // Close thinking message if one is open
+                  if (currentThinkingMessageId && thinkingStartTime) {
+                    const duration = Date.now() - thinkingStartTime
+                    const thinkingId = currentThinkingMessageId
+                    
+                    // Update thinking message with final duration
+                    setMessages((prev) => {
+                      const newMessages = [...prev]
+                      const thinkingIndex = newMessages.findIndex(
+                        m => m.id === thinkingId
+                      )
+                      if (thinkingIndex !== -1) {
+                        newMessages[thinkingIndex] = {
+                          id: thinkingId,
+                          message: {
+                            type: "thinking",
+                            content: accumulatedThinkingContent,
+                            duration: duration
+                          }
+                        }
+                      }
+                      return newMessages
+                    })
+                    
+                    currentThinkingMessageId = null
+                    accumulatedThinkingContent = ""
+                    thinkingStartTime = null
+                  }
+                  
                   // Handle assistant text message
                   if (!currentAssistantMessageId) {
                     currentAssistantMessageId = `assistant-${Date.now()}`
@@ -327,6 +443,34 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                   }
                 }
               } else if (data.type === "done") {
+                // Finalize any open thinking message before closing
+                if (currentThinkingMessageId && thinkingStartTime) {
+                  const duration = Date.now() - thinkingStartTime
+                  const thinkingId = currentThinkingMessageId
+                  
+                  setMessages((prev) => {
+                    const newMessages = [...prev]
+                    const thinkingIndex = newMessages.findIndex(
+                      m => m.id === thinkingId
+                    )
+                    if (thinkingIndex !== -1) {
+                      newMessages[thinkingIndex] = {
+                        id: thinkingId,
+                        message: {
+                          type: "thinking",
+                          content: accumulatedThinkingContent,
+                          duration: duration
+                        }
+                      }
+                    }
+                    return newMessages
+                  })
+                  
+                  currentThinkingMessageId = null
+                  accumulatedThinkingContent = ""
+                  thinkingStartTime = null
+                }
+                
                 currentAssistantMessageId = null
                 accumulatedContent = ""
                 setIsLoading(false)
@@ -387,7 +531,35 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
             if (msg.message.type === "assistant" && !msg.message.content.trim()) {
               return false
             }
+            // Filter out empty thinking messages
+            if (msg.message.type === "thinking" && !msg.message.content.trim()) {
+              return false
+            }
             return true
+          })
+          .sort((a, b) => {
+            // Extract timestamps from IDs (format: "type-timestamp")
+            const getTimestamp = (id: string) => {
+              const match = id.match(/-(\d+)$/)
+              return match ? parseInt(match[1]) : 0
+            }
+            
+            const aTime = getTimestamp(a.id)
+            const bTime = getTimestamp(b.id)
+            
+            // If messages are within 2 seconds of each other
+            if (Math.abs(aTime - bTime) < 2000) {
+              // Ensure thinking comes before assistant
+              if (a.message.type === "thinking" && b.message.type === "assistant") {
+                return -1 // a comes first
+              }
+              if (a.message.type === "assistant" && b.message.type === "thinking") {
+                return 1 // b comes first
+              }
+            }
+            
+            // Otherwise sort by timestamp (chronological order)
+            return aTime - bTime
           })
           .map((msg) => {
           const { id, message } = msg
@@ -414,7 +586,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
                 <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
                   <Image 
-                    src="/creepy_allen-removebg-preview.png" 
+                    src={theme === "dark" ? "/creepy_allen-removebg-preview.png" : "/allen_light_mode_happy.png"}
                     alt="Allen" 
                     width={40} 
                     height={40}
@@ -539,7 +711,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
               parsedArgs = message.toolArgs
             }
             
-            const headerLabel = isSearch ? "Searching documents" : isReadWebpage ? "Reading webpage" : `Calling ${message.toolName}`
+            const headerLabel = isSearch ? "Searching developer docs" : isReadWebpage ? "Reading webpage" : `Calling ${message.toolName}`
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
                 <Collapsible className="max-w-[85%] sm:max-w-[75%]">
@@ -628,6 +800,40 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
             )
           }
           
+          // Render thinking block
+          if (message.type === "thinking") {
+            // Format duration in a human-readable way
+            const formatDuration = (ms: number) => {
+              if (ms < 1000) return `${Math.round(ms)}ms`
+              return `${(ms / 1000).toFixed(1)}s`
+            }
+            
+            // Determine label based on whether thinking is complete
+            const label = message.duration 
+              ? `Thought for ${formatDuration(message.duration)}`
+              : "Thinking"
+            
+            return (
+              <div key={id} className="flex gap-3 sm:gap-4 justify-start">
+                <Collapsible defaultOpen={false} className="max-w-[85%] sm:max-w-[75%]">
+                  <div className="text-sm sm:text-base text-muted-foreground">
+                    <CollapsibleTrigger className="flex items-center gap-2 group data-[state=open]:mb-2">
+                      <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+                      <span className="font-semibold text-foreground">
+                        {label}
+                      </span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="text-xs text-muted-foreground mt-2 pl-6 max-h-64 overflow-y-auto whitespace-pre-wrap">
+                        {message.content}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              </div>
+            )
+          }
+          
           return null
         })}
 
@@ -635,7 +841,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
           <div className="flex gap-3 sm:gap-4 justify-start">
             <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
               <Image 
-                src="/creepy_allen-removebg-preview.png" 
+                src={theme === "dark" ? "/creepy_allen-removebg-preview.png" : "/allen_light_mode_happy.png"}
                 alt="Allen" 
                 width={40} 
                 height={40}

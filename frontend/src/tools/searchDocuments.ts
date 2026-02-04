@@ -4,36 +4,124 @@ import { getSearchResultsFromShaped } from "@/lib/shaped";
 import { time, toolTimings } from "./utils";
 
 export const searchDocuments = tool(
-  async (input: { query: string }) => {
+  async (input: { query: string, mode: "vector" | "lexical" | "hybrid" }) => {
     const stopTotal = time('searchDocuments_total');
+
+    if (input.mode == "vector") {
+      const shapedQl = `SELECT * 
+      FROM text_search(
+          query='$query', 
+          mode='vector',
+          text_embedding_ref='text_content_embedding'
+      )
+      LIMIT 20`
+      const params = {
+        query: input.query
+      }
+      // Shaped API timing
+      const stopShaped = time('searchDocuments_shaped_api');
+      const results = await getSearchResultsFromShaped(shapedQl, params);
+      const shapedResult = stopShaped();
+
+      // Formatting timing
+      const stopFormat = time('searchDocuments_format');
+      const formatted = JSON.stringify(
+        results.slice(0, 15).map((r) => ({
+          title: r.metadata.name,
+          content: r.metadata.content,
+          url: r.metadata.file_path,
+        }))
+      );
+      const formatResult = stopFormat();
+      const totalResult = stopTotal();
+      
+      toolTimings['searchDocuments'] = totalResult.duration;
+      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      
+      return formatted;
+    } else if (input.mode == "lexical") {
+      const shapedQl = `SELECT * 
+      FROM text_search(
+          query='$query', 
+          mode='lexical',
+          fuzziness=0
+      )
+      LIMIT 20`
+      const params = {
+        query: input.query
+      }
+      // Shaped API timing
+      const stopShaped = time('searchDocuments_shaped_api');
+      const results = await getSearchResultsFromShaped(shapedQl, params);
+      const shapedResult = stopShaped();
+
+      // Formatting timing
+      const stopFormat = time('searchDocuments_format');
+      const formatted = JSON.stringify(
+        results.slice(0, 15).map((r) => ({
+          title: r.metadata.name,
+          content: r.metadata.content,
+          url: r.metadata.file_path,
+        }))
+      );
+      const formatResult = stopFormat();
+      const totalResult = stopTotal();
+      
+      toolTimings['searchDocuments'] = totalResult.duration;
+      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      
+      return formatted;
+    } else if (input.mode == "hybrid") {
+      const shapedQl = `SELECT * 
+      FROM text_search(
+          query='$query', 
+          mode='lexical',
+          limit=10
+      ),
+      text_search(
+          query='$query', 
+          mode='vector',
+          text_embedding_ref='text_content_embedding',
+          limit=10
+      )
+      LIMIT 20`
+      const params = {
+        query: input.query
+      }
+      // Shaped API timing
+      const stopShaped = time('searchDocuments_shaped_api');
+      const results = await getSearchResultsFromShaped(shapedQl, params);
+      const shapedResult = stopShaped();
+
+      // Formatting timing
+      const stopFormat = time('searchDocuments_format');
+      const formatted = JSON.stringify(
+        results.slice(0, 15).map((r) => ({
+          title: r.metadata.name,
+          content: r.metadata.content,
+          url: r.metadata.file_path,
+        }))
+      );
+      const formatResult = stopFormat();
+      const totalResult = stopTotal();
+      
+      toolTimings['searchDocuments'] = totalResult.duration;
+      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      
+      return formatted;
+    } 
     
-    // Shaped API timing
-    const stopShaped = time('searchDocuments_shaped_api');
-    const results = await getSearchResultsFromShaped(input.query);
-    const shapedResult = stopShaped();
-    
-    // Formatting timing
-    const stopFormat = time('searchDocuments_format');
-    const formatted = JSON.stringify(
-      results.slice(0, 15).map((r) => ({
-        title: r.metadata.name,
-        content: r.metadata.content,
-        url: r.metadata.file_path,
-      }))
-    );
-    const formatResult = stopFormat();
-    const totalResult = stopTotal();
-    
-    toolTimings['searchDocuments'] = totalResult.duration;
-    console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
-    
-    return formatted;
   },
   {
     name: "search_documents",
     description: "Search the Shaped documentation for relevant content about a given topic",
     schema: z.object({
       query: z.string().describe("The search query to find relevant documents"),
+      mode: z.enum(["vector", "lexical", "hybrid"])
+        .describe(`The search mode. 
+          Choose "vector" for semantic search: to return docs containing similar semantic meaning or phrase content to the input. 
+          Choose "lexical" for BM25 lexical search: to return docs with specific keywords or IDs.
+          Choose "hybrid" for a mix of strategies: 50% vector and 50% lexical.`)
     }),
   }
 );

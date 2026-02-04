@@ -1,29 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAgent } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
+import { PostHog } from 'posthog-node';
+import { LangChainCallbackHandler } from '@posthog/ai';
 import { searchDocuments, readWebpage, time, toolTimings, resetToolTimings } from "@/tools";
 
 // Cache the agent instance to avoid recreating it on every request
 let cachedAgent: ReturnType<typeof createAgent> | null = null;
+
+// Initialize PostHog client
+let posthogClient: PostHog | null = null;
+
+function getPostHogClient() {
+  if (!posthogClient) {
+    posthogClient = new PostHog(
+      process.env.POSTHOG_API_KEY!,
+      { host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com' }
+    );
+  }
+  return posthogClient;
+}
 
 function getAgent() {
   if (!cachedAgent) {
     const model = new ChatAnthropic({
       model: "claude-sonnet-4-5-20250929",
       apiKey: process.env.ANTHROPIC_API_KEY,
+      thinking: {
+        type: "enabled",
+        budget_tokens: 10000,
+      },
+      maxTokens: 20000,
     });
 
     cachedAgent = createAgent({
       model,
       tools: [searchDocuments, readWebpage],
-      systemPrompt: `You are Allen (Al), a documentation assistant for Shaped. Help users find answers about the Shaped platform and API.
+      systemPrompt: `
+You are Allen (Al), a documentation assistant for Shaped. 
+Help users find answers about the Shaped platform and API.
 
-Guidelines:
+<basic_guidelines>
 - Be concise. Prefer short, direct answers over long explanations.
-- Include code examples when they clarify the answer (e.g., API calls, ShapedQL query syntax, engine config snippets).
-- Use search tools only when needed. Run search at most 4 times per question. If you still lack information after 4 searches, answer with what you have and suggest where to look.
+- Use code examples when they clarify the answer. 
+- Use search tools at your disposal. 
+</basic_guidelines>
+
+
+<prefer_search>
+- Use search tools at your disposal. Run search at most 4 times per question.
+- After retrieving search results, think carefully about whether the results are relevant to the user's query. If the results don't contain the information needed to answer the question, try searching again with a different query or search mode.
+- After 4 searches, if the content is still not found or not relevant, tell the user: "I couldn't find information about this in the Shaped documentation. This topic may not be covered in the available documentation."
+- When you have enough context, answer without extra searches.
 - Prefer a single, focused search but use multiple when required.
-- When you have enough context, answer without extra searches.`,
+- Run search at most 4 times per question.
+</prefer_search>
+
+<code_outputs>
+- Use the search tool to find the correct syntax for ShapedQL, CLI commands, and API calls. 
+- Include code examples when they clarify the answer (e.g., API calls, ShapedQL query syntax, engine config snippets).
+- Include code examples when the user requests them
+- Do not infer code syntax from your trained knowledge. 
+</code_outputs>
+`,
     });
   }
   return cachedAgent;
@@ -35,16 +74,27 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const { query, message } = body;
+    const { messages } = body;
 
-    const userMessage = query || message;
-    
-    if (!userMessage) {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
-        { error: "Query or message is required" },
+        { error: "Messages array is required" },
         { status: 400 }
       );
     }
+
+    // Create PostHog callback handler for LLM analytics
+    const lastUserMessage = messages[messages.length - 1]?.content || "";
+    const phClient = getPostHogClient();
+    const callbackHandler = new LangChainCallbackHandler({
+      client: phClient,
+      distinctId: `user_${Date.now()}`, // TODO: Use actual user ID when authentication is implemented
+      properties: {
+        conversation_id: crypto.randomUUID(),
+        user_message: lastUserMessage,
+      },
+      debug: true, // Enable debug logging to verify events
+    });
 
     // Create a ReadableStream for streaming responses
     const stream = new ReadableStream({
@@ -58,8 +108,11 @@ export async function POST(request: NextRequest) {
           
           // Stream agent responses with messages mode to get LLM tokens
           const stream = await agent.stream(
-            { messages: [{ role: "user", content: userMessage }] },
-            { streamMode: "messages" }
+            { messages },
+            { 
+              streamMode: "messages",
+              callbacks: [callbackHandler]
+            }
           );
 
           for await (const [token, metadata] of stream) {
