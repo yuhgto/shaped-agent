@@ -1,0 +1,32 @@
+version: v2
+name: api_docs_search_engine
+data:
+  item_table:
+    query: select *, id as item_id from api_docs_chunked
+    type: query
+index:
+  lexical_search:
+    item_fields:
+      - content
+      - endpoint_name
+      - api_section
+      - subsection
+      - endpoint_path
+  embeddings:
+    - name: api_content_embedding
+      encoder:
+        type: hugging_face
+        model_name: Alibaba-NLP/gte-modernbert-base
+        item_fields:
+          - content
+          - endpoint_name
+          - api_section
+          - subsection
+    - name: endpoint_embedding
+      encoder:
+        type: hugging_face
+        model_name: Alibaba-NLP/gte-modernbert-base
+        item_fields:
+          - endpoint_name
+          - http_method
+          - endpoint_path

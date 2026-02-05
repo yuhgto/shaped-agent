@@ -697,6 +697,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
           if (message.type === "tool_call") {
             const isSearch = message.toolName === "search_documents"
             const isReadWebpage = message.toolName === "read_webpage"
+            const isSearchApiReference = message.toolName === "search_api_reference"
             
             // Try to parse tool args (they might be a JSON string or object)
             let parsedArgs: any = null
@@ -711,7 +712,10 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
               parsedArgs = message.toolArgs
             }
             
-            const headerLabel = isSearch ? "Searching developer docs" : isReadWebpage ? "Reading webpage" : `Calling ${message.toolName}`
+            const headerLabel = isSearch ? "Searching developer docs" 
+              : isSearchApiReference ? "Searching API reference" 
+              : isReadWebpage ? "Reading webpage" 
+              : `Calling ${message.toolName}`
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
                 <Collapsible className="max-w-[85%] sm:max-w-[75%]">
@@ -742,6 +746,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
           // Render tool result
           if (message.type === "tool_result") {
             const isSearch = message.toolName === "search_documents"
+            const isSearchApiReference = message.toolName === "search_api_reference"
             const isReadWebpage = message.toolName === "read_webpage"
             
             // Try to parse search results if it's a search tool
@@ -754,7 +759,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
               }
             }
             
-            const headerLabel = isSearch ? "Search results" : isReadWebpage ? "Webpage content" : `${message.toolName} result`
+            const headerLabel = (isSearch || isSearchApiReference) ? "Search results" : isReadWebpage ? "Webpage content" : `${message.toolName} result`
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
                 <Collapsible defaultOpen={false} className="max-w-[85%] sm:max-w-[75%]">

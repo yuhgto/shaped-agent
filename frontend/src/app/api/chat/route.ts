@@ -3,7 +3,7 @@ import { createAgent } from "langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { PostHog } from 'posthog-node';
 import { LangChainCallbackHandler } from '@posthog/ai';
-import { searchDocuments, readWebpage, time, toolTimings, resetToolTimings } from "@/tools";
+import { searchDocuments, readWebpage, time, toolTimings, resetToolTimings, searchApiReference } from "@/tools";
 
 // Cache the agent instance to avoid recreating it on every request
 let cachedAgent: ReturnType<typeof createAgent> | null = null;
@@ -35,7 +35,7 @@ function getAgent() {
 
     cachedAgent = createAgent({
       model,
-      tools: [searchDocuments, readWebpage],
+      tools: [searchDocuments, searchApiReference],
       systemPrompt: `
 You are Allen (Al), a documentation assistant for Shaped. 
 Help users find answers about the Shaped platform and API.

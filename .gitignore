@@ -1,6 +1,10 @@
 # raw data
 /notebooks/data/raw
 
+# cursor 
+.cursor/
+.notes/
+
 # mac system
 .DS_Store
 */.DS_Store

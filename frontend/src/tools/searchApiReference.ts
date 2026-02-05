@@ -3,9 +3,9 @@ import * as z from "zod";
 import { getSearchResultsFromShaped } from "@/lib/shaped";
 import { time, toolTimings } from "./utils";
 
-export const searchDocuments = tool(
+export const searchApiReference = tool(
   async (input: { query: string, mode: "vector" | "lexical" | "hybrid" }) => {
-    const stopTotal = time('searchDocuments_total');
+    const stopTotal = time('searchApiReference_total');
 
     if (input.mode == "vector") {
       const shapedQl = `SELECT * 
@@ -19,24 +19,24 @@ export const searchDocuments = tool(
         query: input.query
       }
       // Shaped API timing
-      const stopShaped = time('searchDocuments_shaped_api');
-      const results = await getSearchResultsFromShaped("agent_rag_search_engine", shapedQl, params);
+      const stopShaped = time('searchApiReference_shaped_api');
+      const results = await getSearchResultsFromShaped("api_docs_search_engine", shapedQl, params);
       const shapedResult = stopShaped();
 
       // Formatting timing
-      const stopFormat = time('searchDocuments_format');
+      const stopFormat = time('searchApiReference_format');
       const formatted = JSON.stringify(
         results.slice(0, 15).map((r) => ({
           title: r.metadata.name,
           content: r.metadata.content,
-          url: `https://docs.shaped.ai/docs/v2/${r.metadata.file_path.replace(/\.[^/.]+$/, "")}`,
+          url: r.metadata.file_path,
         }))
       );
       const formatResult = stopFormat();
       const totalResult = stopTotal();
       
-      toolTimings['searchDocuments'] = totalResult.duration;
-      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      toolTimings['searchApiReference'] = totalResult.duration;
+      console.log(`[searchApiReference] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
       
       return formatted;
     } else if (input.mode == "lexical") {
@@ -51,24 +51,24 @@ export const searchDocuments = tool(
         query: input.query
       }
       // Shaped API timing
-      const stopShaped = time('searchDocuments_shaped_api');
-      const results = await getSearchResultsFromShaped("agent_rag_search_engine", shapedQl, params);
+      const stopShaped = time('searchApiReference_shaped_api');
+      const results = await getSearchResultsFromShaped("api_docs_search_engine", shapedQl, params);
       const shapedResult = stopShaped();
 
       // Formatting timing
-      const stopFormat = time('searchDocuments_format');
+      const stopFormat = time('searchApiReference_format');
       const formatted = JSON.stringify(
         results.slice(0, 15).map((r) => ({
           title: r.metadata.name,
           content: r.metadata.content,
-          url: `https://docs.shaped.ai/docs/v2/${r.metadata.file_path.replace(/\.[^/.]+$/, "")}`,
+          url: r.metadata.file_path,
         }))
       );
       const formatResult = stopFormat();
       const totalResult = stopTotal();
       
-      toolTimings['searchDocuments'] = totalResult.duration;
-      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      toolTimings['searchApiReference'] = totalResult.duration;
+      console.log(`[searchApiReference] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
       
       return formatted;
     } else if (input.mode == "hybrid") {
@@ -89,33 +89,34 @@ export const searchDocuments = tool(
         query: input.query
       }
       // Shaped API timing
-      const stopShaped = time('searchDocuments_shaped_api');
-      const results = await getSearchResultsFromShaped("agent_rag_search_engine", shapedQl, params);
+      const stopShaped = time('searchApiReference_shaped_api');
+      const results = await getSearchResultsFromShaped("api_docs_search_engine", shapedQl, params);
       const shapedResult = stopShaped();
 
       // Formatting timing
-      const stopFormat = time('searchDocuments_format');
+      const stopFormat = time('searchApiReference_format');
       const formatted = JSON.stringify(
         results.slice(0, 15).map((r) => ({
           title: r.metadata.name,
           content: r.metadata.content,
-          url: `https://docs.shaped.ai/docs/v2/${r.metadata.file_path.replace(/\.[^/.]+$/, "")}`,
+          url: r.metadata.file_path,
         }))
       );
       const formatResult = stopFormat();
       const totalResult = stopTotal();
       
-      toolTimings['searchDocuments'] = totalResult.duration;
-      console.log(`[searchDocuments] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
+      toolTimings['searchApiReference'] = totalResult.duration;
+      console.log(`[searchApiReference] shaped_api: ${shapedResult.duration.toFixed(2)}ms, format: ${formatResult.duration.toFixed(2)}ms, total: ${totalResult.duration.toFixed(2)}ms`);
       
       return formatted;
     } 
+    
   },
   {
-    name: "search_documents",
-    description: "Search the Shaped documentation for relevant content about a given topic",
+    name: "search_api_reference",
+    description: "Search the Shaped API reference for relevant content about a given topic",
     schema: z.object({
-      query: z.string().describe("The search query to find relevant documents"),
+      query: z.string().describe("The search query to find relevant API content"),
       mode: z.enum(["vector", "lexical", "hybrid"])
         .describe(`The search mode. 
           Choose "vector" for semantic search: to return docs containing similar semantic meaning or phrase content to the input. 
