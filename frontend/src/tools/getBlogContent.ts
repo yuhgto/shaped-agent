@@ -8,7 +8,16 @@ export const getBlogContent = async (url: string): Promise<string> => {
     const stopFetch = time('getBlogContent_fetch');
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Failed to fetch URL: ${response.statusText}`);
+      const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      
+      // Log detailed error for Vercel logs
+      console.error('[getBlogContent] HTTP error:', {
+        url,
+        status: response.status,
+        statusText: response.statusText
+      });
+      
+      throw new Error(errorMessage);
     }
     const html = await response.text();
     const fetchResult = stopFetch();
@@ -48,8 +57,18 @@ export const getBlogContent = async (url: string): Promise<string> => {
     return output;
   } catch (error) {
     const totalResult = stopTotal();
-    console.error(`Error fetching blog content from ${url}:`, error);
+    
+    // Log detailed error for Vercel logs
+    console.error('[getBlogContent] Error fetching blog content:', {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      duration: totalResult.duration
+    });
+    
     console.log(`[getBlogContent] total: ${totalResult.duration.toFixed(2)}ms (error)`);
-    return `Error: Could not fetch content from ${url}`;
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return `Error: Could not fetch content from ${url}. ${errorMessage}`;
   }
 }

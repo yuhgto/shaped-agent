@@ -785,32 +785,83 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
             const isSearchApiReference = message.toolName === "search_api_reference"
             const isReadWebpage = message.toolName === "read_webpage"
             
-            // Try to parse search results if it's a search tool
+            // Try to parse the content to check for errors or search results
             let parsedResults = null
-            if (isSearch) {
-              try {
-                parsedResults = JSON.parse(message.content)
-              } catch (e) {
-                // Not JSON, that's okay
+            let hasError = false
+            let errorDetails = null
+            
+            try {
+              const parsed = JSON.parse(message.content)
+              
+              // Check if it's an error response
+              if (parsed.error) {
+                hasError = true
+                errorDetails = parsed
+              } else if (Array.isArray(parsed)) {
+                // It's a search results array
+                parsedResults = parsed
+              } else {
+                // Some other JSON structure
+                parsedResults = parsed
+              }
+            } catch (e) {
+              // Not JSON - check if content starts with "Error:"
+              if (message.content.startsWith('Error:')) {
+                hasError = true
+                errorDetails = { message: message.content }
               }
             }
             
-            const headerLabel = (isSearch || isSearchApiReference) ? "Search results" : isReadWebpage ? "Webpage content" : `${message.toolName} result`
+            const headerLabel = hasError 
+              ? "Error" 
+              : (isSearch || isSearchApiReference) ? "Search results" 
+              : isReadWebpage ? "Webpage content" 
+              : `${message.toolName} result`
+            
             return (
               <div key={id} className="flex gap-3 sm:gap-4 justify-start">
-                <Collapsible defaultOpen={false} className="max-w-[85%] sm:max-w-[75%]">
+                <Collapsible defaultOpen={hasError} className="max-w-[85%] sm:max-w-[75%]">
                   <div className="text-sm sm:text-base text-muted-foreground">
                     <CollapsibleTrigger className="flex items-center gap-2 group data-[state=open]:mb-2">
                       <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                      <span className="font-semibold text-foreground">{headerLabel}</span>
-                      {message.status && (
+                      <span className={`font-semibold ${hasError ? 'text-destructive' : 'text-foreground'}`}>
+                        {headerLabel}
+                      </span>
+                      {hasError ? (
+                        <span className="text-xs px-2 py-0.5 rounded bg-destructive/10 text-destructive">
+                          error
+                        </span>
+                      ) : message.status && (
                         <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
                           {message.status}
                         </span>
                       )}
                     </CollapsibleTrigger>
                     <CollapsibleContent>
-                      {(parsedResults && Array.isArray(parsedResults)) ? (
+                      {hasError ? (
+                        <div className="mt-2 pl-6 text-xs">
+                          <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded">
+                            <div className="font-semibold mb-1">
+                              {errorDetails?.error || 'Tool execution failed'}
+                            </div>
+                            {errorDetails?.message && (
+                              <div className="text-xs opacity-90 mt-1">
+                                {errorDetails.message}
+                              </div>
+                            )}
+                            {errorDetails?.details && (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer opacity-75 hover:opacity-100">
+                                  Technical details
+                                </summary>
+                                <pre className="mt-1 text-xs opacity-75 whitespace-pre-wrap">
+                                  {errorDetails.details}
+                                </pre>
+                              </details>
+                            )}
+                          </div>
+                        </div>
+                      ) : (parsedResults && Array.isArray(parsedResults)) ? (
                         <div className="space-y-2 mt-2 pl-6">
                           {parsedResults.map((result: any, idx: number) => (
                             <div key={idx} className="text-xs bg-muted p-2 rounded">
