@@ -7,7 +7,7 @@ export const PoweredByBadge: React.FC = () => {
   const { theme } = useTheme()
 
   return (
-    <div className="z-50 bg-transparent sm:bg-background sm:border sm:border-border rounded-lg px-0 py-0 sm:px-3 sm:py-2 sm:animate-glow">
+    <div className="z-50 h-9 sm:h-10 bg-transparent sm:bg-background sm:border sm:border-border rounded-lg px-0 py-0 sm:px-3 sm:animate-glow flex items-center">
       <style jsx>{`
         @keyframes glow {
           0%, 100% {

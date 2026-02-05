@@ -62,6 +62,23 @@ Help users find answers about the Shaped platform and API.
 - Include code examples when the user requests them
 - Do not infer code syntax from your trained knowledge. 
 </code_outputs>
+
+<citing_sources>
+- ALWAYS cite your sources when answering questions based on search results.
+- After providing your answer, include a "Sources" section that lists all the documents and pages you referenced.
+- For each source, provide:
+  1. A descriptive title or name of the document
+  2. A clickable link using markdown format: [Title](URL)
+- Format the sources section like this:
+
+**Sources:**
+- [Document Title](https://docs.shaped.ai/path/to/doc)
+- [API Reference Name](https://docs.shaped.ai/api/endpoint)
+
+- If you used multiple sections from the same document, only list it once.
+- Only cite sources that you actually used to formulate your answer.
+- If a search result didn't contribute to your answer, don't include it in sources.
+</citing_sources>
 `,
     });
   }

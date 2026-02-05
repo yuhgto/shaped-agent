@@ -655,7 +655,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                           continue
                         }
                         
-                        // Handle regular text with bold and inline code
+                        // Handle regular text with bold, inline code, and links
                         const parts = line.split(/(\*\*.*?\*\*)/g)
                         elements.push(
                           <p key={elements.length} className={i < lines.length - 1 ? "mb-2" : ""}>
@@ -663,7 +663,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                               if (part.startsWith('**') && part.endsWith('**')) {
                                 return <strong key={j} className="text-foreground font-semibold">{part.slice(2, -2)}</strong>
                               }
-                              // Handle inline code
+                              // Handle inline code and links
                               const codeParts = part.split(/(`[^`]+`)/g)
                               return (
                                 <React.Fragment key={j}>
@@ -675,7 +675,43 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                                         </code>
                                       )
                                     }
-                                    return <span key={k}>{codePart}</span>
+                                    // Handle markdown links [text](url)
+                                    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g
+                                    const linkParts: (string | React.ReactElement)[] = []
+                                    let lastIndex = 0
+                                    let match
+                                    
+                                    while ((match = linkRegex.exec(codePart)) !== null) {
+                                      // Add text before the link
+                                      if (match.index > lastIndex) {
+                                        linkParts.push(codePart.substring(lastIndex, match.index))
+                                      }
+                                      // Add the link
+                                      linkParts.push(
+                                        <a
+                                          key={`link-${k}-${match.index}`}
+                                          href={match[2]}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-primary hover:underline underline-offset-2"
+                                        >
+                                          {match[1]}
+                                        </a>
+                                      )
+                                      lastIndex = linkRegex.lastIndex
+                                    }
+                                    
+                                    // Add remaining text after last link
+                                    if (lastIndex < codePart.length) {
+                                      linkParts.push(codePart.substring(lastIndex))
+                                    }
+                                    
+                                    // If no links were found, return the original text
+                                    if (linkParts.length === 0) {
+                                      return <span key={k}>{codePart}</span>
+                                    }
+                                    
+                                    return <React.Fragment key={k}>{linkParts}</React.Fragment>
                                   })}
                                 </React.Fragment>
                               )
