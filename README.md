@@ -4,9 +4,9 @@ Search the Shaped blog with hybrid search (lexical + semantic). This demo shows 
 
 ## How It Works
 
-1. **Ingestion:** Blog posts are chunked into smaller segments using `langchain-text-splitters` to preserve semantic meaning while enabling granular search. See `/notebooks/site_search.ipynb` for ingestion script. 
+1. **Ingestion:** Blog posts are chunked into smaller segments using `langchain-text-splitters` to preserve semantic meaning while enabling granular search. See `/scripts/site_search.ipynb` for ingestion script. 
 
-2. **Indexing:** Shaped creates both lexical (keyword) and vector (semantic) indexes on the document chunks. See `/notebooks/blog_engine_config.yaml` for full engine config. 
+2. **Indexing:** Shaped creates both lexical (keyword) and vector (semantic) indexes on the document chunks. See `/scripts/blog_engine_config.yaml` for full engine config. 
 
 3. **Search:** The frontend sends queries to the Shaped API, which performs hybrid search combining lexical and vector retrieval. See `/frontend/src/app/api/search/route.ts` for the exact API call. 
 
@@ -24,7 +24,7 @@ The notebook walks through ingesting documents into Shaped:
 
 1. **Create a virtual environment:**
    ```bash
-   cd document-search/notebooks
+   cd document-search/scripts
    python3.11 -m venv .venv
    source .venv/bin/activate
    ```
@@ -35,7 +35,7 @@ The notebook walks through ingesting documents into Shaped:
    ```
 
 3. **Set up environment variables:**
-   Create a `.env` file in the `notebooks/` directory:
+   Create a `.env` file in the `scripts/` directory:
    ```
    SHAPED_API_KEY=your_shaped_api_key
    ```
@@ -87,7 +87,7 @@ document-search/
 │   │   └── lib/
 │   └── .env.local               # Environment variables (create from .env.example)
 │
-├── notebooks/                   # Data preparation & ingestion
+├── scripts/                     # Data preparation & ingestion
 │   ├── site_search.ipynb        # Main notebook for chunking & uploading data
 │   ├── blog_engine_config.yaml  # Engine config for semantic/lexical search
 │   └── data/                    # Generated data files
