@@ -124,11 +124,13 @@ export async function POST(request: NextRequest) {
           const agent = getAgent();
           
           // Stream agent responses with messages mode to get LLM tokens
+          // Pass request.signal so the agent stops when the client disconnects (e.g. user clicks stop)
           const stream = await agent.stream(
             { messages },
             { 
               streamMode: "messages",
-              callbacks: [callbackHandler]
+              callbacks: [callbackHandler],
+              signal: request.signal
             }
           );
 
@@ -163,6 +165,12 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
           controller.close();
         } catch (error) {
+          // Client disconnected (e.g. user clicked stop) - close cleanly without sending error
+          const isAbort = request.signal?.aborted || (error instanceof Error && error.name === "AbortError");
+          if (isAbort) {
+            controller.close();
+            return;
+          }
           console.error("Error in agent stream:", error);
           const errorData = JSON.stringify({
             type: "error",

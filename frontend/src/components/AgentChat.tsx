@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Send, Loader2, User, ArrowDown, ChevronDown, ChevronRight } from "lucide-react"
+import { Send, Loader2, User, ArrowDown, ChevronDown, ChevronRight, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CodeBlock } from "@/components/CodeBlock"
 import Image from "next/image"
@@ -32,20 +32,147 @@ interface AgentChatProps {
   onEmptyStateChange?: (isEmpty: boolean) => void
 }
 
+/** Renders message content with code blocks (CodeBlock), headers, bold, inline code, and links. */
+function renderMessageContent(content: string): React.ReactNode {
+  const lines = content.split("\n")
+  const elements: React.ReactElement[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    if (line.startsWith("```")) {
+      const language = line.substring(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i])
+        i++
+      }
+      elements.push(
+        <CodeBlock key={elements.length} language={language} code={codeLines.join("\n")} />
+      )
+      i++
+      continue
+    }
+
+    if (line.startsWith("### ")) {
+      elements.push(
+        <h3 key={elements.length} className="text-lg font-semibold mt-4 mb-2 text-foreground">
+          {line.substring(4)}
+        </h3>
+      )
+      i++
+      continue
+    }
+    if (line.startsWith("## ")) {
+      elements.push(
+        <h2 key={elements.length} className="text-xl font-semibold mt-4 mb-2 text-foreground">
+          {line.substring(3)}
+        </h2>
+      )
+      i++
+      continue
+    }
+    if (line.startsWith("# ")) {
+      elements.push(
+        <h1 key={elements.length} className="text-2xl font-bold mt-4 mb-2 text-foreground">
+          {line.substring(2)}
+        </h1>
+      )
+      i++
+      continue
+    }
+
+    const parts = line.split(/(\*\*.*?\*\*)/g)
+    elements.push(
+      <p key={elements.length} className={i < lines.length - 1 ? "mb-2" : ""}>
+        {parts.map((part, j) => {
+          if (part.startsWith("**") && part.endsWith("**")) {
+            return (
+              <strong key={j} className="text-foreground font-semibold">
+                {part.slice(2, -2)}
+              </strong>
+            )
+          }
+          const codeParts = part.split(/(`[^`]+`)/g)
+          return (
+            <React.Fragment key={j}>
+              {codeParts.map((codePart, k) => {
+                if (codePart.startsWith("`") && codePart.endsWith("`")) {
+                  return (
+                    <code
+                      key={k}
+                      className="bg-muted px-1.5 py-0.5 rounded text-foreground text-xs"
+                    >
+                      {codePart.slice(1, -1)}
+                    </code>
+                  )
+                }
+                const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g
+                const linkParts: (string | React.ReactElement)[] = []
+                let lastIndex = 0
+                let match
+                while ((match = linkRegex.exec(codePart)) !== null) {
+                  if (match.index > lastIndex) {
+                    linkParts.push(codePart.substring(lastIndex, match.index))
+                  }
+                  linkParts.push(
+                    <a
+                      key={`link-${k}-${match.index}`}
+                      href={match[2]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline underline-offset-2"
+                    >
+                      {match[1]}
+                    </a>
+                  )
+                  lastIndex = linkRegex.lastIndex
+                }
+                if (lastIndex < codePart.length) {
+                  linkParts.push(codePart.substring(lastIndex))
+                }
+                if (linkParts.length === 0) {
+                  return <span key={k}>{codePart}</span>
+                }
+                return <React.Fragment key={k}>{linkParts}</React.Fragment>
+              })}
+            </React.Fragment>
+          )
+        })}
+      </p>
+    )
+    i++
+  }
+
+  return elements
+}
+
 export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(function AgentChat({ onEmptyStateChange }, ref) {
   const { theme } = useTheme()
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
+  const inputRef = React.useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+  const abortControllerRef = React.useRef<AbortController | null>(null)
+  const userAbortedRef = React.useRef(false)
   const [showScrollButton, setShowScrollButton] = React.useState(false)
 
   // Focus input on mount
   React.useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // Auto-resize textarea to fit content
+  React.useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px` // 192px = max-h-48
+  }, [input])
 
   // Track scroll position
   const handleScroll = React.useCallback(() => {
@@ -90,6 +217,9 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
     setMessages((prev) => [...prev, newUserMessage])
     setIsLoading(true)
 
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     try {
       // Convert and filter messages to API format
       const apiMessages = messages
@@ -125,6 +255,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ messages: apiMessages }),
+        signal: abortController.signal,
       })
 
       if (!response.ok) {
@@ -249,6 +380,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
         return ""
       }
 
+      let streamAbortedAndHandled = false
       while (true) {
         const { done, value } = await reader.read()
         
@@ -476,6 +608,12 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                 setIsLoading(false)
                 break
               } else if (data.type === "error") {
+                // If user clicked stop, backend may still send error before connection closes; treat as clean stop
+                if (userAbortedRef.current) {
+                  userAbortedRef.current = false
+                  streamAbortedAndHandled = true
+                  break
+                }
                 throw new Error(data.error || "Unknown error")
               }
             } catch (parseError) {
@@ -483,22 +621,28 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
             }
           }
         }
+        if (streamAbortedAndHandled) break
       }
 
       // Ensure loading is set to false
       setIsLoading(false)
     } catch (error) {
-      console.error("Error sending message:", error)
+      if (error instanceof Error && error.name === "AbortError") {
+        // User stopped the agent; conversation state is preserved
+      } else {
+        console.error("Error sending message:", error)
+        setMessages((prev) => [...prev, {
+          id: `error-${Date.now()}`,
+          message: {
+            type: "assistant",
+            content: "Sorry, I encountered an error. Please try again."
+          }
+        }])
+      }
+    } finally {
+      abortControllerRef.current = null
+      userAbortedRef.current = false
       setIsLoading(false)
-      
-      // Add error message
-      setMessages((prev) => [...prev, {
-        id: `error-${Date.now()}`,
-        message: {
-          type: "assistant",
-          content: "Sorry, I encountered an error. Please try again."
-        }
-      }])
     }
   }, [isLoading])
 
@@ -506,6 +650,20 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
     e.preventDefault()
     submitMessage(input)
   }, [input, submitMessage])
+
+  const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e as unknown as React.FormEvent)
+    }
+  }, [handleSubmit])
+
+  const handleStop = React.useCallback(() => {
+    if (abortControllerRef.current) {
+      userAbortedRef.current = true
+      abortControllerRef.current.abort()
+    }
+  }, [])
 
   React.useImperativeHandle(ref, () => ({
     submitQuery: (query: string) => {
@@ -570,7 +728,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
               <div key={id} className="flex gap-3 sm:gap-4 justify-end">
                 <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-muted dark:bg-primary/20 text-foreground">
                   <div className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                    {message.content}
+                    {renderMessageContent(message.content)}
                   </div>
                 </div>
                 <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-muted flex items-center justify-center">
@@ -595,134 +753,7 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
                 </div>
                 <div className="max-w-[85%] sm:max-w-[75%] rounded-xl sm:rounded-2xl p-3 sm:p-4 bg-muted/50 text-foreground">
                   <div className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                    {(() => {
-                      const lines = message.content.split('\n')
-                      const elements: React.ReactElement[] = []
-                      let i = 0
-                      
-                      while (i < lines.length) {
-                        const line = lines[i]
-                        
-                        // Handle code blocks (triple backticks)
-                        if (line.startsWith('```')) {
-                          const language = line.substring(3).trim()
-                          const codeLines: string[] = []
-                          i++
-                          
-                          // Collect all lines until closing ```
-                          while (i < lines.length && !lines[i].startsWith('```')) {
-                            codeLines.push(lines[i])
-                            i++
-                          }
-                          
-                          elements.push(
-                            <CodeBlock
-                              key={elements.length}
-                              language={language}
-                              code={codeLines.join('\n')}
-                            />
-                          )
-                          i++ // Skip closing ```
-                          continue
-                        }
-                        
-                        // Handle markdown headers
-                        if (line.startsWith('### ')) {
-                          elements.push(
-                            <h3 key={elements.length} className="text-lg font-semibold mt-4 mb-2 text-foreground">
-                              {line.substring(4)}
-                            </h3>
-                          )
-                          i++
-                          continue
-                        }
-                        if (line.startsWith('## ')) {
-                          elements.push(
-                            <h2 key={elements.length} className="text-xl font-semibold mt-4 mb-2 text-foreground">
-                              {line.substring(3)}
-                            </h2>
-                          )
-                          i++
-                          continue
-                        }
-                        if (line.startsWith('# ')) {
-                          elements.push(
-                            <h1 key={elements.length} className="text-2xl font-bold mt-4 mb-2 text-foreground">
-                              {line.substring(2)}
-                            </h1>
-                          )
-                          i++
-                          continue
-                        }
-                        
-                        // Handle regular text with bold, inline code, and links
-                        const parts = line.split(/(\*\*.*?\*\*)/g)
-                        elements.push(
-                          <p key={elements.length} className={i < lines.length - 1 ? "mb-2" : ""}>
-                            {parts.map((part, j) => {
-                              if (part.startsWith('**') && part.endsWith('**')) {
-                                return <strong key={j} className="text-foreground font-semibold">{part.slice(2, -2)}</strong>
-                              }
-                              // Handle inline code and links
-                              const codeParts = part.split(/(`[^`]+`)/g)
-                              return (
-                                <React.Fragment key={j}>
-                                  {codeParts.map((codePart, k) => {
-                                    if (codePart.startsWith('`') && codePart.endsWith('`')) {
-                                      return (
-                                        <code key={k} className="bg-muted px-1.5 py-0.5 rounded text-foreground text-xs">
-                                          {codePart.slice(1, -1)}
-                                        </code>
-                                      )
-                                    }
-                                    // Handle markdown links [text](url)
-                                    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g
-                                    const linkParts: (string | React.ReactElement)[] = []
-                                    let lastIndex = 0
-                                    let match
-                                    
-                                    while ((match = linkRegex.exec(codePart)) !== null) {
-                                      // Add text before the link
-                                      if (match.index > lastIndex) {
-                                        linkParts.push(codePart.substring(lastIndex, match.index))
-                                      }
-                                      // Add the link
-                                      linkParts.push(
-                                        <a
-                                          key={`link-${k}-${match.index}`}
-                                          href={match[2]}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-primary hover:underline underline-offset-2"
-                                        >
-                                          {match[1]}
-                                        </a>
-                                      )
-                                      lastIndex = linkRegex.lastIndex
-                                    }
-                                    
-                                    // Add remaining text after last link
-                                    if (lastIndex < codePart.length) {
-                                      linkParts.push(codePart.substring(lastIndex))
-                                    }
-                                    
-                                    // If no links were found, return the original text
-                                    if (linkParts.length === 0) {
-                                      return <span key={k}>{codePart}</span>
-                                    }
-                                    
-                                    return <React.Fragment key={k}>{linkParts}</React.Fragment>
-                                  })}
-                                </React.Fragment>
-                              )
-                            })}
-                          </p>
-                        )
-                        i++
-                      }
-                      
-                      return elements
-                    })()}
+                    {renderMessageContent(message.content)}
                   </div>
                 </div>
               </div>
@@ -952,23 +983,25 @@ export const AgentChat = React.forwardRef<AgentChatHandle, AgentChatProps>(funct
       {/* Input form - always at bottom */}
       <form onSubmit={handleSubmit} className="flex-shrink-0 pb-4">
           <div className="relative">
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Ask a question..."
               disabled={isLoading}
-              className="w-full h-12 sm:h-14 pl-4 sm:pl-5 pr-14 sm:pr-16 bg-muted/50 border border-border rounded-xl sm:rounded-2xl text-base sm:text-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-300 disabled:opacity-50"
+              rows={1}
+              className="w-full min-h-12 sm:min-h-14 max-h-48 py-3 sm:py-4 pl-4 sm:pl-5 pr-14 sm:pr-16 bg-muted/50 border border-border rounded-xl sm:rounded-2xl text-base sm:text-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-300 disabled:opacity-50 resize-none overflow-y-auto"
             />
             <Button
-              type="submit"
-              disabled={!input.trim() || isLoading}
+              type={isLoading ? "button" : "submit"}
+              disabled={!isLoading && !input.trim()}
+              onClick={isLoading ? handleStop : undefined}
               size="icon"
               className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+                <X className="h-4 w-4 sm:h-5 sm:w-5" />
               ) : (
                 <Send className="h-4 w-4 sm:h-5 sm:w-5" />
               )}

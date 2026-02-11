@@ -13,7 +13,7 @@ export const searchApiReference = tool(
         FROM text_search(
             query='$query', 
             mode='vector',
-            text_embedding_ref='text_content_embedding'
+            text_embedding_ref='api_content_embedding'
         )
         LIMIT 20`
         const params = {
@@ -82,7 +82,7 @@ export const searchApiReference = tool(
         text_search(
             query='$query', 
             mode='vector',
-            text_embedding_ref='text_content_embedding',
+            text_embedding_ref='api_content_embedding',
             limit=10
         )
         LIMIT 20`
